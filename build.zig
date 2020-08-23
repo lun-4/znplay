@@ -5,6 +5,7 @@ const builds = std.build;
 fn linkLibraries(step: *builds.LibExeObjStep) void {
     step.linkSystemLibrary("c");
     step.linkSystemLibrary("sndfile");
+    step.linkSystemLibrary("soundio");
 }
 
 pub fn build(b: *Builder) void {
