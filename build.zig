@@ -1,4 +1,11 @@
-const Builder = @import("std").build.Builder;
+const std = @import("std");
+const Builder = std.build.Builder;
+const builds = std.build;
+
+fn linkLibraries(step: *builds.LibExeObjStep) void {
+    step.linkSystemLibrary("c");
+    step.linkSystemLibrary("sndfile");
+}
 
 pub fn build(b: *Builder) void {
     // Standard target options allows the person running `zig build` to choose
@@ -15,6 +22,8 @@ pub fn build(b: *Builder) void {
     exe.setTarget(target);
     exe.setBuildMode(mode);
     exe.install();
+
+    linkLibraries(exe);
 
     const run_cmd = exe.run();
     run_cmd.step.dependOn(b.getInstallStep());
