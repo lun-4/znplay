@@ -31,9 +31,12 @@ fn virtualRead(data_ptr: ?*c_void, bytes: sndfile.c.sf_count_t, user_ptr: ?*c_vo
 
     ctx.read_error = null;
     const read_bytes = std.os.read(ctx.fd, buf) catch |err| {
+        std.debug.warn("read FAIL {}\n", .{err});
         ctx.read_error = err;
         return @as(i64, 0);
     };
+
+    std.debug.warn("os.read {} {}\n", .{ read_bytes, buf[0..read_bytes] });
 
     return @intCast(i64, read_bytes);
 }
@@ -41,7 +44,7 @@ fn virtualRead(data_ptr: ?*c_void, bytes: sndfile.c.sf_count_t, user_ptr: ?*c_vo
 // make those functions return whatever. libsndfile wants them, even though
 // it won't care about them when writing. i should fix it upstream.
 fn virtualLength(_: ?*c_void) callconv(.C) sndfile.c.sf_count_t {
-    return @intCast(i64, 100000000000);
+    return @intCast(i64, 0xfffffff3);
 }
 
 fn virtualSeek(offset: sndfile.c.sf_count_t, whence: c_int, user_data: ?*c_void) callconv(.C) sndfile.c.sf_count_t {
@@ -107,16 +110,21 @@ pub fn main() anyerror!u8 {
 
     var status_event = (try client.readEvent()).?;
     std.testing.expect(status_event == .status);
-    std.debug.warn("got status: {}\n", .{status_event.status.code});
+    std.debug.warn("http: got status: {}\n", .{status_event.status.code});
 
     while (true) {
         const event = (try client.readEvent()).?;
-        if (event != .head_complete) break;
-        std.debug.warn("got header: {}: {}\n", .{ event.header.name, event.header.value });
+        if (event != .head_complete) {
+            std.debug.warn("http: got head_complete\n", .{});
+            break;
+        }
+        std.testing.expect(event == .header);
+        std.debug.warn("http: got header: {}: {}\n", .{ event.header.name, event.header.value });
     }
 
-    // var end = (try client.readEvent()).?;
-    // std.testing.expect(end == .end);
+    var buf: [1024]u8 = undefined;
+    const off1 = try sock.read(&buf);
+    std.debug.warn("data: {}\n", .{buf[0..off1]});
 
     // setup libsndfile based on sock
     var virtual = sndfile.c.SF_VIRTUAL_IO{
@@ -156,13 +164,13 @@ pub fn main() anyerror!u8 {
 
     var audio_buf: [32]f64 = undefined;
     while (true) {
-        const bytes = sndfile.c.sf_readf_double(file, &audio_buf, 32);
-        if (bytes == 0) {
+        const frames = sndfile.c.sf_readf_double(file, &audio_buf, 32);
+        if (frames == 0) {
             std.debug.warn("finished read\n", .{});
             break;
         }
 
-        std.debug.warn("read {}\n", .{bytes});
+        std.debug.warn("read {} frames\n", .{frames});
     }
 
     return 0;
