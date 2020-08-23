@@ -16,7 +16,6 @@ pub fn main() anyerror!u8 {
 
     const host = try (args_it.next(allocator) orelse @panic("expected host arg"));
     defer allocator.free(host);
-    std.debug.warn("host: {}\n", .{host});
 
     const path = try (args_it.next(allocator) orelse @panic("expected path arg"));
     defer allocator.free(path);
@@ -34,5 +33,22 @@ pub fn main() anyerror!u8 {
     // var soundio_state = soundio_opt.?;
     // defer soundio.c.soundio_destroy(soundio_state);
     // std.debug.warn("initialized libsoundio\n", .{});
+
+    var it = std.mem.split(host, ":");
+    const actual_host = it.next().?;
+
+    var actual_port: u16 = undefined;
+    if (it.next()) |port_str| {
+        actual_port = try std.fmt.parseInt(u16, port_str, 10);
+    } else {
+        actual_port = 80;
+    }
+    std.debug.warn("host: {}\n", .{actual_host});
+    std.debug.warn("port: {}\n", .{actual_port});
+    std.debug.warn("path: {}\n", .{path});
+
+    const sock = try std.net.tcpConnectToHost(allocator, actual_host, actual_port);
+    defer sock.close();
+
     return 0;
 }
