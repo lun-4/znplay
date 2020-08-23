@@ -22,6 +22,7 @@ pub fn build(b: *Builder) void {
     const exe = b.addExecutable("znplay", "src/main.zig");
     exe.setTarget(target);
     exe.setBuildMode(mode);
+    exe.addPackagePath("sndfile", "zig-sndfile/src/main.zig");
     exe.install();
 
     linkLibraries(exe);

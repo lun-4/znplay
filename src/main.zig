@@ -1,5 +1,6 @@
 const std = @import("std");
 const soundio = @import("soundio.zig");
+const sndfile = @import("sndfile");
 
 pub fn main() anyerror!u8 {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -27,8 +28,11 @@ pub fn main() anyerror!u8 {
         return 1;
     }
 
-    var soundio_state = soundio_opt.?;
-    defer soundio.c.soundio_destroy(soundio_state);
-    std.debug.warn("initialized libsoundio\n", .{});
+    // var info = std.mem.zeroes(sndfile.Info);
+    // const f = try sndfile.SoundFile.open(allocator, "test.wav", .Read, &info);
+
+    // var soundio_state = soundio_opt.?;
+    // defer soundio.c.soundio_destroy(soundio_state);
+    // std.debug.warn("initialized libsoundio\n", .{});
     return 0;
 }
