@@ -12,8 +12,11 @@ pub fn main() anyerror!void {
 
     std.debug.assert(args_it.skip() == true);
 
-    const url = try (args_it.next(allocator) orelse @panic("expected url arg"));
-    defer allocator.free(url);
+    const host = try (args_it.next(allocator) orelse @panic("expected host arg"));
+    defer allocator.free(host);
+    std.debug.warn("host: {}\n", .{host});
 
-    std.debug.warn("url: {}\n", .{url});
+    const path = try (args_it.next(allocator) orelse @panic("expected path arg"));
+    defer allocator.free(path);
+    std.debug.warn("path: {}\n", .{path});
 }
