@@ -1,0 +1,3 @@
+[submodule "zig-sndfile"]
+	path = zig-sndfile
+	url = https://github.com/lun-4/zig-sndfile
