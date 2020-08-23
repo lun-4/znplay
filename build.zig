@@ -23,6 +23,7 @@ pub fn build(b: *Builder) void {
     exe.setTarget(target);
     exe.setBuildMode(mode);
     exe.addPackagePath("sndfile", "zig-sndfile/src/main.zig");
+    exe.addPackagePath("hzzp", "hzzp/src/main.zig");
     exe.install();
 
     linkLibraries(exe);

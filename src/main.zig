@@ -1,6 +1,7 @@
 const std = @import("std");
 const soundio = @import("soundio.zig");
 const sndfile = @import("sndfile");
+const hzzp = @import("hzzp");
 const c = sndfile.c;
 
 const VirtualContext = struct {
@@ -98,16 +99,24 @@ pub fn main() anyerror!u8 {
     const sock = try std.net.tcpConnectToHost(allocator, actual_host, actual_port);
     defer sock.close();
 
-    try sock.writer().print(
-        "GET {} HTTP/1.1\r\n" ++
-            "Host: http://{}\r\n" ++
-            "\r\n\r\n",
-        .{ path, host },
-    );
+    var read_buffer: [128]u8 = undefined;
 
-    var buf: [128]u8 = undefined;
-    const data = try sock.read(&buf);
-    std.debug.warn("data: {}\n", .{data});
+    var client = hzzp.base.Client.create(&read_buffer, sock.reader(), sock.writer());
+    try client.writeHead("GET", path);
+    try client.writeHeaderValueFormat("Host", "http://{s}", .{host});
+
+    var status_event = (try client.readEvent()).?;
+    std.testing.expect(status_event == .status);
+    std.debug.warn("got status: {}\n", .{status_event.status.code});
+
+    while (true) {
+        const event = (try client.readEvent()).?;
+        if (event != .head_complete) break;
+        std.debug.warn("got header: {}: {}\n", .{ event.header.name, event.header.value });
+    }
+
+    // var end = (try client.readEvent()).?;
+    // std.testing.expect(end == .end);
 
     // setup libsndfile based on sock
     var virtual = sndfile.c.SF_VIRTUAL_IO{
