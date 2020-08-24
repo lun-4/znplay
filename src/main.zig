@@ -76,6 +76,13 @@ fn initSoundIo() !Result {
     }
 
     var soundio_state = soundio_opt.?;
+    var backend_count = @intCast(usize, soundio.c.soundio_backend_count(soundio_state));
+    var i: usize = 0;
+    while (i < backend_count) : (i += 1) {
+        var backend = soundio.c.soundio_get_backend(soundio_state, @intCast(c_int, i));
+        std.debug.warn("backend {} {}\n", .{ i, backend });
+    }
+
     var err = soundio.c.soundio_connect(soundio_state);
     if (err != 0) {
         const msg = std.mem.spanZ(soundio.c.soundio_strerror(err));
@@ -112,6 +119,36 @@ fn initSoundIo() !Result {
         .device = device,
         .stream = outstream_opt.?,
     };
+}
+
+fn write_callback(
+    stream: [*c]soundio.c.SoundIoOutStream,
+    frame_count_min: c_int,
+    frame_count_max: c_int,
+) callconv(.C) void {
+    std.debug.warn("write_callback!\n", .{});
+}
+
+fn initStream(stream: *soundio.c.SoundIoOutStream) !void {
+    var err = soundio.c.soundio_outstream_open(stream);
+    if (err != 0) {
+        const msg = std.mem.spanZ(soundio.c.soundio_strerror(err));
+        std.debug.warn("unable to open device ({}): {}\n", .{ err, msg });
+        return error.OpenError;
+    }
+
+    if (stream.layout_error != 0) {
+        const msg = std.mem.spanZ(soundio.c.soundio_strerror(stream.layout_error));
+        std.debug.warn("unable to set channel layout: {}\n", .{msg});
+        return error.LayoutError;
+    }
+
+    err = soundio.c.soundio_outstream_start(stream);
+    if (err != 0) {
+        const msg = std.mem.spanZ(soundio.c.soundio_strerror(err));
+        std.debug.warn("unable to start device: {}\n", .{msg});
+        return error.StartError;
+    }
 }
 
 pub fn main() anyerror!u8 {
@@ -152,6 +189,12 @@ pub fn main() anyerror!u8 {
     std.debug.warn("host: {}\n", .{actual_host});
     std.debug.warn("port: {}\n", .{actual_port});
     std.debug.warn("path: {}\n", .{path});
+
+    // setup outstream
+    result.stream.format = soundio.c.SoundIoFormat.Float64LE;
+    result.stream.name = "znplay";
+    result.stream.write_callback = write_callback;
+    try initStream(result.stream);
 
     const sock = try std.net.tcpConnectToHost(allocator, actual_host, actual_port);
     defer sock.close();
@@ -235,6 +278,7 @@ pub fn main() anyerror!u8 {
         }
 
         const actual_frames = audio_buf[0..@intCast(usize, frames)];
+        soundio.c.soundio_wait_events(result.state);
     }
 
     return 0;
