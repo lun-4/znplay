@@ -37,7 +37,9 @@ fn virtualRead(data_ptr: ?*c_void, bytes: sndfile.c.sf_count_t, user_ptr: ?*c_vo
         return @as(i64, 0);
     };
 
-    std.debug.warn("os.read {} {}\n", .{ read_bytes, buf[0..read_bytes] });
+    std.debug.warn("os.read {}\n", .{
+        read_bytes,
+    });
     ctx.cursor += read_bytes;
 
     return @intCast(i64, read_bytes);
@@ -53,11 +55,11 @@ fn virtualSeek(offset: sndfile.c.sf_count_t, whence: c_int, user_data: ?*c_void)
     return offset;
 }
 
-fn virtualTell(_: ?*c_void) callconv(.C) sndfile.c.sf_count_t {
-    // const ctx = @ptrCast(*VirtualContext, @alignCast(@alignOf(VirtualContext), user_ptr));
-    std.debug.warn("tell\n", .{});
-    // return @intCast(sndfile.c.sf_count_t, ctx.cursor);
-    return 0;
+fn virtualTell(user_ptr: ?*c_void) callconv(.C) sndfile.c.sf_count_t {
+    const ctx = @ptrCast(*VirtualContext, @alignCast(@alignOf(VirtualContext), user_ptr));
+    std.debug.warn("tell {}\n", .{ctx.cursor});
+    return @intCast(sndfile.c.sf_count_t, ctx.cursor);
+    // return 0;
 }
 
 pub fn main() anyerror!u8 {
@@ -167,15 +169,19 @@ pub fn main() anyerror!u8 {
         return 1;
     }
 
-    var audio_buf: [32]f64 = undefined;
+    var audio_buf: [1024]f64 = undefined;
     while (true) {
-        const frames = sndfile.c.sf_readf_double(file, &audio_buf, 32);
+        std.debug.warn("==reading\n", .{});
+        const frames = sndfile.c.sf_readf_double(file, &audio_buf, 1024);
+        std.debug.warn("read {} frames\n", .{frames});
         if (frames == 0) {
-            std.debug.warn("finished read\n", .{});
+            if (virtual_ctx.read_error) |err| {
+                std.debug.warn("read error {}\n", .{err});
+            } else {
+                std.debug.warn("finished read\n", .{});
+            }
             break;
         }
-
-        std.debug.warn("read {} frames\n", .{frames});
     }
 
     return 0;
