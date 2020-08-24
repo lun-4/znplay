@@ -62,7 +62,12 @@ fn virtualTell(user_ptr: ?*c_void) callconv(.C) sndfile.c.sf_count_t {
     // return 0;
 }
 
-fn initSoundIo() !*soundio.c.SoundIo {
+const Result = struct {
+    state: *soundio.c.SoundIo,
+    stream: *soundio.c.SoundIoOutStream,
+};
+
+fn initSoundIo() !Result {
     var soundio_opt = soundio.c.soundio_create();
     if (soundio_opt == null) {
         std.debug.warn("libsoundio fail: out of memory\n", .{});
@@ -70,7 +75,38 @@ fn initSoundIo() !*soundio.c.SoundIo {
     }
 
     var soundio_state = soundio_opt.?;
-    return soundio_state;
+    var err = soundio.c.soundio_connect(soundio_state);
+    if (err != 0) {
+        const msg = std.mem.spanZ(soundio.c.soundio_strerror(err));
+        std.debug.warn("error connecting: {}\n", .{msg});
+        return error.ConnectError;
+    }
+
+    _ = soundio.c.soundio_flush_events(soundio_state);
+
+    const default_out_device_index = soundio.c.soundio_default_output_device_index(soundio_state);
+    if (default_out_device_index < 0) {
+        std.debug.warn("no output device connected\n", .{});
+        return error.NoDevice;
+    }
+
+    var device_opt = soundio.c.soundio_get_output_device(soundio_state, default_out_device_index);
+    if (device_opt == null) {
+        std.debug.warn("failed to get output device: out of memory\n", .{});
+        return error.OutOfMemory;
+    }
+
+    var device = device_opt.?;
+
+    std.debug.warn("output device: {}\n", .{device.*.name});
+
+    var outstream_opt = soundio.c.soundio_outstream_create(device);
+    if (outstream_opt == null) {
+        std.debug.warn("failed to get output stream: out of memory\n", .{});
+        return error.OutOfMemory;
+    }
+
+    return Result{ .state = soundio_state, .stream = outstream_opt.? };
 }
 
 pub fn main() anyerror!u8 {
@@ -91,8 +127,8 @@ pub fn main() anyerror!u8 {
     const path = try (args_it.next(allocator) orelse @panic("expected path arg"));
     defer allocator.free(path);
 
-    var soundio_state = try initSoundIo();
-    defer soundio.c.soundio_destroy(soundio_state);
+    var result = try initSoundIo();
+    defer soundio.c.soundio_destroy(result.state);
     std.debug.warn("initialized libsoundio\n", .{});
 
     var it = std.mem.split(host, ":");
