@@ -6,6 +6,7 @@ const c = sndfile.c;
 
 const VirtualContext = struct {
     fd: std.os.fd_t,
+    cursor: usize = 0,
     write_error: ?std.os.SendError = null,
     read_error: ?std.os.ReadError = null,
 };
@@ -37,21 +38,25 @@ fn virtualRead(data_ptr: ?*c_void, bytes: sndfile.c.sf_count_t, user_ptr: ?*c_vo
     };
 
     std.debug.warn("os.read {} {}\n", .{ read_bytes, buf[0..read_bytes] });
+    ctx.cursor += read_bytes;
 
     return @intCast(i64, read_bytes);
 }
 
-// make those functions return whatever. libsndfile wants them, even though
-// it won't care about them when writing. i should fix it upstream.
 fn virtualLength(_: ?*c_void) callconv(.C) sndfile.c.sf_count_t {
-    return @intCast(i64, 0xfffffff3);
+    std.debug.warn("length\n", .{});
+    return @intCast(i64, 0xffffff2);
 }
 
 fn virtualSeek(offset: sndfile.c.sf_count_t, whence: c_int, user_data: ?*c_void) callconv(.C) sndfile.c.sf_count_t {
+    std.debug.warn("seek {} {}\n", .{ offset, whence });
     return offset;
 }
 
-fn virtualTell(user_data: ?*c_void) callconv(.C) sndfile.c.sf_count_t {
+fn virtualTell(_: ?*c_void) callconv(.C) sndfile.c.sf_count_t {
+    // const ctx = @ptrCast(*VirtualContext, @alignCast(@alignOf(VirtualContext), user_ptr));
+    std.debug.warn("tell\n", .{});
+    // return @intCast(sndfile.c.sf_count_t, ctx.cursor);
     return 0;
 }
 
@@ -122,7 +127,7 @@ pub fn main() anyerror!u8 {
         std.debug.warn("http: got header: {}: {}\n", .{ event.header.name, event.header.value });
     }
 
-    var buf: [1024]u8 = undefined;
+    var buf: [50]u8 = undefined;
     const off1 = try sock.read(&buf);
     std.debug.warn("data: {}\n", .{buf[0..off1]});
 
