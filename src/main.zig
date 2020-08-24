@@ -62,6 +62,17 @@ fn virtualTell(user_ptr: ?*c_void) callconv(.C) sndfile.c.sf_count_t {
     // return 0;
 }
 
+fn initSoundIo() !*soundio.c.SoundIo {
+    var soundio_opt = soundio.c.soundio_create();
+    if (soundio_opt == null) {
+        std.debug.warn("libsoundio fail: out of memory\n", .{});
+        return error.OutOfMemory;
+    }
+
+    var soundio_state = soundio_opt.?;
+    return soundio_state;
+}
+
 pub fn main() anyerror!u8 {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer {
@@ -80,18 +91,9 @@ pub fn main() anyerror!u8 {
     const path = try (args_it.next(allocator) orelse @panic("expected path arg"));
     defer allocator.free(path);
 
-    var soundio_opt = soundio.c.soundio_create();
-    if (soundio_opt == null) {
-        std.debug.warn("libsoundio fail: out of memory\n", .{});
-        return 1;
-    }
-
-    // var info = std.mem.zeroes(sndfile.Info);
-    // const f = try sndfile.SoundFile.open(allocator, "test.wav", .Read, &info);
-
-    // var soundio_state = soundio_opt.?;
-    // defer soundio.c.soundio_destroy(soundio_state);
-    // std.debug.warn("initialized libsoundio\n", .{});
+    var soundio_state = try initSoundIo();
+    defer soundio.c.soundio_destroy(soundio_state);
+    std.debug.warn("initialized libsoundio\n", .{});
 
     var it = std.mem.split(host, ":");
     const actual_host = it.next().?;
@@ -150,6 +152,9 @@ pub fn main() anyerror!u8 {
         @ptrCast(*sndfile.c.SF_INFO, &info),
         @ptrCast(*c_void, &virtual_ctx),
     );
+    defer {
+        _ = sndfile.c.sf_close(file);
+    }
 
     const status = sndfile.c.sf_error(file);
     if (status != 0) {
@@ -180,8 +185,11 @@ pub fn main() anyerror!u8 {
             } else {
                 std.debug.warn("finished read\n", .{});
             }
+
             break;
         }
+
+        const actual_frames = audio_buf[0..@intCast(usize, frames)];
     }
 
     return 0;
