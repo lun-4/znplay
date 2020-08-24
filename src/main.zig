@@ -64,6 +64,7 @@ fn virtualTell(user_ptr: ?*c_void) callconv(.C) sndfile.c.sf_count_t {
 
 const Result = struct {
     state: *soundio.c.SoundIo,
+    device: *soundio.c.SoundIoDevice,
     stream: *soundio.c.SoundIoOutStream,
 };
 
@@ -106,7 +107,11 @@ fn initSoundIo() !Result {
         return error.OutOfMemory;
     }
 
-    return Result{ .state = soundio_state, .stream = outstream_opt.? };
+    return Result{
+        .state = soundio_state,
+        .device = device,
+        .stream = outstream_opt.?,
+    };
 }
 
 pub fn main() anyerror!u8 {
@@ -128,7 +133,11 @@ pub fn main() anyerror!u8 {
     defer allocator.free(path);
 
     var result = try initSoundIo();
-    defer soundio.c.soundio_destroy(result.state);
+    defer {
+        soundio.c.soundio_outstream_destroy(result.stream);
+        soundio.c.soundio_device_unref(result.device);
+        soundio.c.soundio_destroy(result.state);
+    }
     std.debug.warn("initialized libsoundio\n", .{});
 
     var it = std.mem.split(host, ":");
