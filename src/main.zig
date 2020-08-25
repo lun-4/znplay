@@ -121,6 +121,7 @@ fn initSoundIo() !Result {
     };
 }
 
+var global_audio_buffer: []f32 = undefined;
 fn write_callback(
     stream: [*c]soundio.c.SoundIoOutStream,
     frame_count_min: c_int,
@@ -267,10 +268,16 @@ pub fn main() anyerror!u8 {
         return 1;
     }
 
-    var audio_buf: [1024]f64 = undefined;
+    global_audio_buffer = try allocator.alloc(f32, 1024);
+    defer allocator.free(global_audio_buffer);
+
     while (true) {
         std.debug.warn("==reading\n", .{});
-        const frames = sndfile.c.sf_readf_double(file, &audio_buf, 1024);
+        const frames = sndfile.c.sf_readf_float(
+            file,
+            global_audio_buffer.ptr,
+            @intCast(i64, global_audio_buffer.len),
+        );
         std.debug.warn("read {} frames\n", .{frames});
         if (frames == 0) {
             if (virtual_ctx.read_error) |err| {
@@ -282,7 +289,6 @@ pub fn main() anyerror!u8 {
             break;
         }
 
-        const actual_frames = audio_buf[0..@intCast(usize, frames)];
         soundio.c.soundio_wait_events(result.state);
     }
 
