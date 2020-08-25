@@ -191,7 +191,12 @@ pub fn main() anyerror!u8 {
     std.debug.warn("path: {}\n", .{path});
 
     // setup outstream
-    result.stream.format = soundio.c.SoundIoFormat.Float64LE;
+    // todo autodetect wanted format
+    std.debug.assert(soundio.c.soundio_device_supports_format(
+        result.device,
+        soundio.c.SoundIoFormat.Float32LE,
+    ));
+    result.stream.format = soundio.c.SoundIoFormat.Float32LE;
     result.stream.name = "znplay";
     result.stream.write_callback = write_callback;
     try initStream(result.stream);
