@@ -121,13 +121,72 @@ fn initSoundIo() !Result {
     };
 }
 
-var global_audio_buffer: []f32 = undefined;
+var cursor: usize = 0;
+const Samples = std.ArrayList(f32);
+var global_audio_buffer: Samples = undefined;
 fn write_callback(
     stream: [*c]soundio.c.SoundIoOutStream,
     frame_count_min: c_int,
     frame_count_max: c_int,
 ) callconv(.C) void {
-    std.debug.warn("write_callback!\n", .{});
+    std.debug.warn("write_callback! min={} max={}\n", .{ frame_count_min, frame_count_max });
+    var areas: [*c]soundio.c.SoundIoChannelArea = undefined;
+
+    var frames_left = @intCast(i64, frame_count_max);
+
+    // don't do anything if we don't have data
+    if (global_audio_buffer.items.len == 0) {
+        std.debug.warn("!no data, ignoring\n", .{});
+        return;
+    }
+
+    while (true) {
+        var frame_count = frames_left;
+
+        var err = soundio.c.soundio_outstream_begin_write(
+            stream,
+            &areas,
+            @ptrCast(*c_int, &frame_count),
+        );
+        if (err != 0) {
+            const msg = std.mem.spanZ(soundio.c.soundio_strerror(err));
+            std.debug.warn("unrecoverable stream error (begin): {}\n", .{msg});
+            std.os.exit(1);
+        }
+
+        if (frame_count <= 0) break;
+
+        var layout = &stream.*.layout;
+
+        var frame: usize = 0;
+        while (frame < frame_count) : (frame += 1) {
+            if ((cursor + frame) > (global_audio_buffer.items.len - 1)) {
+                break;
+            }
+            std.debug.warn("cursor: {} frame: {} len: {}\n", .{ cursor, frame, global_audio_buffer.items.len });
+            var sample: f32 = global_audio_buffer.items[cursor + frame];
+            var channel: usize = 0;
+            while (channel < layout.channel_count) : (channel += 1) {
+                var wanted_ptr = @ptrCast([*c]f32, @alignCast(@alignOf(f32), areas[channel].ptr));
+                wanted_ptr.* = sample;
+            }
+        }
+
+        err = soundio.c.soundio_outstream_end_write(stream);
+        if (err != 0) {
+            if (err == soundio.c.SoundIoErrorUnderflow)
+                return;
+
+            const msg = std.mem.spanZ(soundio.c.soundio_strerror(err));
+            std.debug.warn("unrecoverable stream error (end): {}\n", .{msg});
+            std.os.exit(1);
+        }
+
+        frames_left -= frame_count;
+        if (frames_left <= 0) break;
+
+        cursor += @intCast(usize, frame);
+    }
 }
 
 fn initStream(stream: *soundio.c.SoundIoOutStream) !void {
@@ -268,17 +327,27 @@ pub fn main() anyerror!u8 {
         return 1;
     }
 
-    global_audio_buffer = try allocator.alloc(f32, 1024);
-    defer allocator.free(global_audio_buffer);
+    var net_cursor: usize = 0;
+    global_audio_buffer = Samples.init(allocator);
+    defer global_audio_buffer.deinit();
 
     while (true) {
         std.debug.warn("==reading\n", .{});
+        const samplerate = @intCast(usize, info.samplerate);
+        try global_audio_buffer.ensureCapacity(global_audio_buffer.items.len + samplerate);
+        global_audio_buffer.expandToCapacity();
+
         const frames = sndfile.c.sf_readf_float(
             file,
-            global_audio_buffer.ptr,
-            @intCast(i64, global_audio_buffer.len),
+            global_audio_buffer.items.ptr + net_cursor,
+            info.samplerate,
         );
-        std.debug.warn("read {} frames\n", .{frames});
+        net_cursor += samplerate;
+
+        std.debug.warn("==got {} frames. buffer length={}\n", .{
+            frames,
+            global_audio_buffer.items.len,
+        });
         if (frames == 0) {
             if (virtual_ctx.read_error) |err| {
                 std.debug.warn("read error {}\n", .{err});
