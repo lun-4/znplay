@@ -346,7 +346,7 @@ pub fn main() anyerror!u8 {
     defer allocator.free(matrix_c);
 
     var sample_format = std.mem.zeroes(ao.c.ao_sample_format);
-    sample_format.bits = @bitSizeOf(f16);
+    sample_format.bits = 16;
     sample_format.rate = info.samplerate;
     sample_format.channels = 1;
     sample_format.byte_format = ao.c.AO_FMT_NATIVE;
@@ -363,25 +363,22 @@ pub fn main() anyerror!u8 {
     }
 
     const samplerate = @intCast(usize, info.samplerate);
-    var audio_read_buffer = try allocator.alloc(f32, samplerate);
+    var audio_read_buffer = try allocator.alloc(i16, samplerate);
     defer allocator.free(audio_read_buffer);
 
-    var pulse_buffer = try allocator.alloc(f16, samplerate);
-    defer allocator.free(audio_read_buffer);
+    var pulse_buffer = try allocator.alloc(u8, samplerate * 2);
+    defer allocator.free(pulse_buffer);
 
     while (true) {
         std.debug.warn("==reading\n", .{});
 
-        const frames = sndfile.c.sf_readf_float(
+        const frames = @intCast(usize, sndfile.c.sf_readf_short(
             file,
             audio_read_buffer.ptr,
             @intCast(i64, audio_read_buffer.len),
-        );
+        ));
 
-        std.debug.warn("==got {} frames. buffer length={}\n", .{
-            frames,
-            samples.buf.len,
-        });
+        std.debug.warn("==got {} frames\n", .{frames});
         if (frames == 0) {
             if (virtual_ctx.read_error) |err| {
                 std.debug.warn("read error {}\n", .{err});
@@ -392,14 +389,12 @@ pub fn main() anyerror!u8 {
             break;
         }
 
-        for (audio_read_buffer) |frame, idx| {
-            pulse_buffer[idx] = @floatCast(f16, frame);
-        }
+        var proper_buffer = audio_read_buffer[0..frames];
 
         const res = ao.c.ao_play(
             device,
-            @ptrCast([*c]u8, pulse_buffer.ptr),
-            @intCast(c_uint, pulse_buffer.len),
+            @ptrCast([*c]u8, proper_buffer.ptr),
+            @intCast(c_uint, proper_buffer.len * 2),
         );
         if (res == 0) {
             const errno = std.c._errno().*;
