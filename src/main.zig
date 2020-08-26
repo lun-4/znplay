@@ -2,7 +2,12 @@ const std = @import("std");
 const soundio = @import("soundio.zig");
 const sndfile = @import("sndfile");
 const hzzp = @import("hzzp");
-const c = sndfile.c;
+
+const ao = struct {
+    pub const c = @cImport({
+        @cInclude("ao/ao.h");
+    });
+};
 
 const VirtualContext = struct {
     fd: std.os.fd_t,
@@ -244,13 +249,16 @@ pub fn main() anyerror!u8 {
     const path = try (args_it.next(allocator) orelse @panic("expected path arg"));
     defer allocator.free(path);
 
-    var result = try initSoundIo();
-    defer {
-        soundio.c.soundio_outstream_destroy(result.stream);
-        soundio.c.soundio_device_unref(result.device);
-        soundio.c.soundio_destroy(result.state);
+    ao.c.ao_initialize();
+    defer ao.c.ao_shutdown();
+    std.debug.warn("initialized libao\n", .{});
+
+    const driver_id = ao.c.ao_driver_id("pulse");
+    // const driver_id = ao.c.ao_default_driver_id();
+    if (driver_id == -1) {
+        std.debug.warn("libao error: failed to get default driver\n", .{});
+        return 1;
     }
-    std.debug.warn("initialized libsoundio\n", .{});
 
     var it = std.mem.split(host, ":");
     const actual_host = it.next().?;
@@ -264,17 +272,6 @@ pub fn main() anyerror!u8 {
     std.debug.warn("host: {}\n", .{actual_host});
     std.debug.warn("port: {}\n", .{actual_port});
     std.debug.warn("path: {}\n", .{path});
-
-    // setup outstream
-    // todo autodetect wanted format
-    std.debug.assert(soundio.c.soundio_device_supports_format(
-        result.device,
-        soundio.c.SoundIoFormat.Float32LE,
-    ));
-    result.stream.format = soundio.c.SoundIoFormat.Float32LE;
-    result.stream.name = "znplay";
-    result.stream.write_callback = write_callback;
-    try initStream(result.stream);
 
     const sock = try std.net.tcpConnectToHost(allocator, actual_host, actual_port);
     defer sock.close();
@@ -342,8 +339,34 @@ pub fn main() anyerror!u8 {
         return 1;
     }
 
+    var matrix = try allocator.dupe(u8, "M");
+    defer allocator.free(matrix);
+
+    var matrix_c = try std.cstr.addNullByte(allocator, matrix);
+    defer allocator.free(matrix_c);
+
+    var sample_format = std.mem.zeroes(ao.c.ao_sample_format);
+    sample_format.bits = @bitSizeOf(f16);
+    sample_format.rate = info.samplerate;
+    sample_format.channels = 1;
+    sample_format.byte_format = ao.c.AO_FMT_NATIVE;
+    // sample_format.matrix = matrix_c.ptr;
+
+    var device = ao.c.ao_open_live(driver_id, &sample_format, null);
+    if (device == null) {
+        const errno = std.c._errno().*;
+        std.debug.warn("failed to open libao device: errno {}\n", .{errno});
+        return 1;
+    }
+    defer {
+        _ = ao.c.ao_close(device);
+    }
+
     const samplerate = @intCast(usize, info.samplerate);
     var audio_read_buffer = try allocator.alloc(f32, samplerate);
+    defer allocator.free(audio_read_buffer);
+
+    var pulse_buffer = try allocator.alloc(f16, samplerate);
     defer allocator.free(audio_read_buffer);
 
     while (true) {
@@ -354,7 +377,6 @@ pub fn main() anyerror!u8 {
             audio_read_buffer.ptr,
             @intCast(i64, audio_read_buffer.len),
         );
-        try samples.write(audio_read_buffer);
 
         std.debug.warn("==got {} frames. buffer length={}\n", .{
             frames,
@@ -370,9 +392,21 @@ pub fn main() anyerror!u8 {
             break;
         }
 
-        std.debug.warn("==flush\n", .{});
-        soundio.c.soundio_flush_events(result.state);
-        std.debug.warn("==flush finished\n", .{});
+        for (audio_read_buffer) |frame, idx| {
+            pulse_buffer[idx] = @floatCast(f16, frame);
+        }
+
+        const res = ao.c.ao_play(
+            device,
+            @ptrCast([*c]u8, pulse_buffer.ptr),
+            @intCast(c_uint, pulse_buffer.len),
+        );
+        if (res == 0) {
+            const errno = std.c._errno().*;
+            std.debug.warn("ao_play fail: errno {}\n", .{errno});
+            return 1;
+        }
+        std.debug.warn("ao_play result: {}\n", .{res});
     }
 
     return 0;
