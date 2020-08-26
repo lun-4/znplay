@@ -5,6 +5,9 @@ using libsoundio and libsndfile in zig
 
 ## build
 
+- libsndfile 1.0.29
+- libao 1.2.2
+
 ```
 zig build
 ```
@@ -14,5 +17,5 @@ zig build
 only http
 
 ```
-./zig-cache/bin/znplay somehost.com somepath
+./zig-cache/bin/znplay host.test:port somepath
 ```
