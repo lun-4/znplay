@@ -281,6 +281,7 @@ pub fn main() anyerror!u8 {
     var client = hzzp.base.Client.create(&read_buffer, sock.reader(), sock.writer());
     try client.writeHead("GET", path);
     try client.writeHeaderValueFormat("Host", "http://{s}", .{host});
+    try client.writeHeadComplete();
 
     var status_event = (try client.readEvent()).?;
     std.testing.expect(status_event == .status);
